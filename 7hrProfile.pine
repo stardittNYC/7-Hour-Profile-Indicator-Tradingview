@@ -1,0 +1,166 @@
+// This Pine Script® code is subject to the terms of the MIT License at https://opensource.org/licenses/MIT
+// © MadMataTrader
+//@version=6
+indicator("7hrProfile", overlay = true, max_bars_back = 500, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Constants
+//---------------------------------------------------------------------------------------------------------------------{
+color BULL_COLOR   = #089981
+color BEAR_COLOR   = #f23645
+color DATA         = #131722
+color HEADERS      = #787B86
+color BACKGROUND   = #FFFFFF
+color BORDERS      = #D1D4DC
+
+string CME    = "CME"
+string CRYPTO = "CRYPTO"
+string FX     = "FX"
+
+string SOLID  = "Solid"
+string DASHED = "Dashed"
+string DOTTED = "Dotted"
+
+string MODE_GROUP    = "Mode"
+string SESSION_GROUP = "Session Profile"
+string DIVIDER_GROUP = "Separator"
+
+string profileModeTooltip       = "Choose the session template used to build the three intraday profiles."
+string showSessionTooltip       = "Show or hide this session's range box."
+string sessionColorTooltip      = "Color for this session's range box and label."
+string rangeTransparencyTooltip = "Transparency of the range boxes, from 0 (opaque) to 100 (invisible)."
+string rangeOutlineTooltip      = "Draw a dotted outline around each range box."
+string rangeLabelTooltip        = "Show the session name above each range box."
+string showDividerTooltip       = "Draw a line whenever a new day starts."
+string dividerColorTooltip      = "Color for the divider line."
+string dividerStyleTooltip      = "Line style for the divider."
+string dividerWidthTooltip      = "Line width for the divider."
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Inputs — Mode
+//---------------------------------------------------------------------------------------------------------------------{
+string profileModeInput = input.string(CME, "Profile Mode", options = [CME, CRYPTO, FX], group = MODE_GROUP, tooltip = profileModeTooltip)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Inputs — Session Profile
+//---------------------------------------------------------------------------------------------------------------------{
+bool  showSessionOneInput    = input.bool(true, "Show Session 1", group = SESSION_GROUP, tooltip = showSessionTooltip, inline = "session1")
+color sessionOneColorInput   = input.color(color.red, "", group = SESSION_GROUP, tooltip = sessionColorTooltip, inline = "session1")
+
+bool  showSessionTwoInput    = input.bool(true, "Show Session 2", group = SESSION_GROUP, tooltip = showSessionTooltip, inline = "session2")
+color sessionTwoColorInput   = input.color(color.green, "", group = SESSION_GROUP, tooltip = sessionColorTooltip, inline = "session2")
+
+bool  showSessionThreeInput  = input.bool(true, "Show Session 3", group = SESSION_GROUP, tooltip = showSessionTooltip, inline = "session3")
+color sessionThreeColorInput = input.color(color.blue, "", group = SESSION_GROUP, tooltip = sessionColorTooltip, inline = "session3")
+
+float rangeTransparencyInput = input.float(90, "Range Area Transparency", group = SESSION_GROUP, tooltip = rangeTransparencyTooltip)
+bool  showRangeOutlineInput  = input.bool(true, "Range Outline", group = SESSION_GROUP, tooltip = rangeOutlineTooltip)
+bool  showRangeLabelInput    = input.bool(true, "Range Label", group = SESSION_GROUP, tooltip = rangeLabelTooltip)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Inputs — Separator
+//---------------------------------------------------------------------------------------------------------------------{
+bool   showDividerInput  = input.bool(true, "Show Separator", group = DIVIDER_GROUP, tooltip = showDividerTooltip, inline = "divider")
+color  dividerColorInput = input.color(color.black, "", group = DIVIDER_GROUP, tooltip = dividerColorTooltip, inline = "divider")
+string dividerStyleInput = input.string(DOTTED, "Line Style", options = [DOTTED, SOLID, DASHED], group = DIVIDER_GROUP, tooltip = dividerStyleTooltip)
+int    dividerWidthInput = input.int(1, "Line Width", minval = 1, maxval = 5, group = DIVIDER_GROUP, tooltip = dividerWidthTooltip)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Parsed settings
+//---------------------------------------------------------------------------------------------------------------------{
+var sessionOneTime = switch profileModeInput
+    CME    => "1800-0100"
+    CRYPTO => "2000-0300"
+    FX     => "1700-0000"
+
+var sessionTwoTime = switch profileModeInput
+    CME    => "0100-0800"
+    CRYPTO => "0300-1000"
+    FX     => "0000-0700"
+
+var sessionThreeTime = switch profileModeInput
+    CME    => "0800-1500"
+    CRYPTO => "1000-1700"
+    FX     => "0700-1400"
+
+sessionOneLabel   = "Asia"
+sessionTwoLabel   = "London"
+sessionThreeLabel = "New York"
+
+var parsedDividerStyle = switch dividerStyleInput
+    SOLID  => line.style_solid
+    DASHED => line.style_dashed
+    DOTTED => line.style_dotted
+
+string sessionTimezone = "America/New_York"
+int barNumber = bar_index
+string chartTimeframe = timeframe.period
+bool isIntraday = timeframe.isminutes
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Functions
+//---------------------------------------------------------------------------------------------------------------------{
+getSessionRange(float sessionState, string sessionName, color sessionColor) =>
+    var int   sessionStartTime = 0
+    var float sessionHigh = high
+    var float sessionLow  = low
+    var box   rangeBoxId = na
+    var label rangeLabelId = na
+
+    bool sessionStarted = sessionState > sessionState[1]
+    bool sessionActive  = sessionState != 0 and sessionState == sessionState[1]
+
+    if sessionStarted
+        sessionStartTime := time
+        sessionHigh := high
+        sessionLow  := low
+
+        rangeBoxId := box.new(barNumber, sessionHigh, barNumber, sessionLow
+          , bgcolor = color.new(sessionColor, rangeTransparencyInput)
+          , border_color = showRangeOutlineInput ? sessionColor : na
+          , border_style = line.style_dotted)
+
+        if showRangeLabelInput
+            rangeLabelId := label.new(sessionStartTime, sessionHigh, sessionName
+              , xloc = xloc.bar_time
+              , textcolor = sessionColor
+              , style = label.style_label_down
+              , color = #00000000
+              , size = size.tiny)
+
+    if sessionActive
+        sessionHigh := math.max(high, sessionHigh)
+        sessionLow  := math.min(low, sessionLow)
+
+        rangeBoxId.set_top(sessionHigh)
+        rangeBoxId.set_rightbottom(barNumber, sessionLow)
+
+        if showRangeLabelInput
+            rangeLabelId.set_xy(int(math.avg(sessionStartTime, time)), sessionHigh)
+
+    [sessionState != 0 ? na : sessionHigh, sessionState != 0 ? na : sessionLow]
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Session Profile
+//---------------------------------------------------------------------------------------------------------------------{
+isSessionOne   = math.sign(nz(time(chartTimeframe, sessionOneTime, sessionTimezone)))
+isSessionTwo   = math.sign(nz(time(chartTimeframe, sessionTwoTime, sessionTimezone)))
+isSessionThree = math.sign(nz(time(chartTimeframe, sessionThreeTime, sessionTimezone)))
+
+if isIntraday and showSessionOneInput
+    getSessionRange(isSessionOne, sessionOneLabel, sessionOneColorInput)
+
+if isIntraday and showSessionTwoInput
+    getSessionRange(isSessionTwo, sessionTwoLabel, sessionTwoColorInput)
+
+if isIntraday and showSessionThreeInput
+    getSessionRange(isSessionThree, sessionThreeLabel, sessionThreeColorInput)
+
+//---------------------------------------------------------------------------------------------------------------------}
+// Separator
+//---------------------------------------------------------------------------------------------------------------------{
+string dividerResolution  = "D"
+bool   isNewDividerPeriod = ta.change(time(dividerResolution)) != 0
+
+if isIntraday and showDividerInput and isNewDividerPeriod
+    line.new(barNumber, high, barNumber, low, extend = extend.both, color = dividerColorInput, style = parsedDividerStyle, width = dividerWidthInput)
